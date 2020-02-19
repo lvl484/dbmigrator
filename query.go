@@ -2,20 +2,28 @@ package main
 
 var ConvTypePostgCasan = func() map[string]string {
 	return map[string]string{
-		"text":              "text",
-		"character":         "text",
-		"character varying": "varchar",
-		"int":               "int",
-		"boolean":           "boolean",
-		"bool":              "boolean",
-		"uuid":              "uuid",
-		"inet":              "inet",
-		"date":              "date",
-		"double precision":  "double",
-		"real":              "float",
-		"timestamp":         "timestamp",
-		"decimal":           "decimal",
-		"serial":            "counter",
+		"text":                        "text",
+		"character":                   "text",
+		"character varying":           "varchar",
+		"int":                         "int",
+		"integer":                     "int",
+		"boolean":                     "boolean",
+		"bool":                        "boolean",
+		"uuid":                        "uuid",
+		"inet":                        "inet",
+		"date":                        "date",
+		"double precision":            "double",
+		"real":                        "float",
+		"timestamp":                   "timestamp",
+		"decimal":                     "decimal",
+		"serial":                      "counter",
+		"timestamp without time zone": "timestamp",
+		"smallint":                    "smallint",
+		"numeric":                     "decimal",
+		"USER-DEFINED":                "text",
+		"ARRAY":                       "text",
+		"tsvector":                    "text",
+		"bytea":                       "blob",
 	}
 }
 
@@ -40,8 +48,9 @@ const (
 type NoSQLQueries string
 
 const (
-	CreateKeyspaceQuery NoSQLQueries = "CREATE KEYSPACE %s WITH replication = { class : \"SimpleStrategy\", \"replication_factor\" : %d }"
-	DropKeyspaceQuery   NoSQLQueries = "DROP KEYSPACE IF EXISTS %s"
+	CreateKeyspaceStart NoSQLQueries = "CREATE KEYSPACE"
+	CreateKeyspaceEnd   NoSQLQueries = "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
+	DropKeyspaceQuery   NoSQLQueries = "DROP KEYSPACE IF EXISTS"
 
 //	MakeForeignKeysQuery   NoSQLQueries = "CREATE TABLE Dependencies (ForeignKey text PRIMARY KEY, MainTable text, MainColumn text, DependTable text, DependColumn)"
 //	InsertForeignKeysQuery NoSQLQueries = "COPY Dependencies (ForeignKey text, MainTable text, MainColumn text, DependTable text, DependColumn) FROM STDIN"

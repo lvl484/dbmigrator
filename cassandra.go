@@ -9,7 +9,7 @@ import (
 	"github.com/gocql/gocql"
 )
 
-const HOST = "localhost"
+const HOST = "127.0.0.1"
 
 // Cassandra structure to handle connection to Cassandra DB
 type Cassandra struct {
@@ -29,25 +29,26 @@ func CreateCassandra(dbname string) (*Cassandra, error) {
 	cluster.Consistency = gocql.Quorum
 	activesess, err := cluster.CreateSession()
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 	// Drop keyspace if exist
-	err = activesess.Query(fmt.Sprintf(string(DropKeyspaceQuery), dbname)).Exec()
+	err = activesess.Query(strings.Join([]string{"DROP KEYSPACE IF EXISTS", dbname}, " ")).Exec()
 	if err != nil {
 		log.Println(err)
 	}
-
-	err = activesess.Query(fmt.Sprintf(string(CreateKeyspaceQuery), dbname, 1)).Exec()
+	str := strings.Join([]string{"CREATE KEYSPACE", dbname, "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"}, " ")
+	err = activesess.Query(str).Exec()
 	if err != nil {
 		log.Println(err)
 	}
-
 	cluster.Keyspace = dbname
 
 	return &Cassandra{
-		clName: dbname,
-		sess:   activesess,
-		clust:  cluster,
+		clName:      dbname,
+		TableInsert: make(map[string][]string),
+		sess:        activesess,
+		clust:       cluster,
 	}, err
 }
 

@@ -16,7 +16,7 @@ type SQLPostgres struct {
 
 // newSQLPostgres create a new instance of SQLPostgres which provide connection with Postgresql DB
 func newSQLPostgres() (*SQLPostgres, error) {
-	cstr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+	cstr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s ",
 		os.Getenv("HOST"), os.Getenv("PORT"), os.Getenv("USER"), os.Getenv("PASSWORD"), os.Getenv("DBNAME"))
 	//	cstr := "postgres://ignoytgaflffcm:16413c58cff7b9c1a445caf4e10fb0fd4f02621464f04ea1a8b83daf8db1c70d@ec2-46-137-156-205.eu-west-1.compute.amazonaws.com:5432/d4smbs2o7scu21"
 	dbd := "postgres"
@@ -41,16 +41,15 @@ func (sp *SQLPostgres) DatabaseSQL() (error, *sql.DB) {
 
 // AddPrimaryKey add PRIMARY KEY to table by column name
 func (sp *SQLPostgres) AddPrimaryKey(tabl string, col string) {
-	t, ok := sp.DbData.Tables[tabl]
-	if ok {
-
-		colum := t.Columns
-		if len(colum) > 0 {
-			for _, c := range colum {
-				if c.Cname == col {
-					c.MakePrimaryKey()
-					break
-				}
+	t := sp.DbData.Tables[tabl]
+	colum := t.Columns
+	if len(colum) > 0 {
+		for i, c := range colum {
+			if c.Cname == col {
+				c.MakePrimaryKey()
+				colum[i] = c
+				sp.DbData.Tables[tabl] = t
+				break
 			}
 		}
 	} else {
@@ -65,15 +64,9 @@ func (sp *SQLPostgres) AddForeignKey(constrname string, forkey ForeignKey) {
 
 // AddColumnToTable add column to table
 func (sp *SQLPostgres) AddColumnToTable(tname string, col Column) {
-	var tab Table
-	tab, ok := sp.DbData.Tables[tname]
-	if ok {
-		tab.Columns = append(tab.Columns, col)
-	} else {
-		cols := []Column{col}
-		tab.Columns = append(tab.Columns, cols...)
-		sp.DbData.Tables[tname] = tab
-	}
+	tab := sp.DbData.Tables[tname]
+	tab.AddColumn(col)
+	sp.DbData.Tables[tname] = tab
 }
 
 // ReadDBName read DB name
@@ -106,7 +99,7 @@ func (sp *SQLPostgres) ReadTableSchema() error {
 	for rows.Next() {
 		var tn, cn, dt string
 		var pos int
-		err = rows.Scan(tn, pos, cn, dt)
+		err = rows.Scan(&tn, &pos, &cn, &dt)
 		if err != nil {
 			log.Println(err)
 		}

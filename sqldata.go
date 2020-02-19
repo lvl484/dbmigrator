@@ -23,6 +23,11 @@ type DatabasePostg struct {
 	Foreignkeys  map[string]ForeignKey
 }
 
+// AddColumn add structure Column to structure Table
+func (t *Table) AddColumn(col Column) {
+	t.Columns = append(t.Columns, col)
+}
+
 // MakePrimaryKey change column to primary key
 func (c *Column) MakePrimaryKey() {
 	c.Pk = true
