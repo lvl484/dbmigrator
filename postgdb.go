@@ -81,6 +81,7 @@ func (sp *SQLPostgres) ReadDBName() error {
 		log.Println(err)
 	}
 	sp.DbData.SetDBName(ss)
+
 	return err
 }
 

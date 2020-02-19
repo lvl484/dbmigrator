@@ -36,6 +36,7 @@ func (c *Column) MakePrimaryKey() {
 // SetDBName set a name of DB to our structure
 func (ds *DatabasePostg) SetDBName(name string) {
 	ds.Databasename = name
+	DBKeyspace = name
 }
 
 // NewDatabasePostg create a new instance of DatabasePostg

@@ -44,14 +44,3 @@ const (
 		"where tc.table_schema = 'public' and constraint_type = 'FOREIGN KEY' and tc.table_catalog = $1;"
 	DataTablesQuery SQLQueries = "SELECT * FROM $1"
 )
-
-type NoSQLQueries string
-
-const (
-	CreateKeyspaceStart NoSQLQueries = "CREATE KEYSPACE"
-	CreateKeyspaceEnd   NoSQLQueries = "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"
-	DropKeyspaceQuery   NoSQLQueries = "DROP KEYSPACE IF EXISTS"
-
-//	MakeForeignKeysQuery   NoSQLQueries = "CREATE TABLE Dependencies (ForeignKey text PRIMARY KEY, MainTable text, MainColumn text, DependTable text, DependColumn)"
-//	InsertForeignKeysQuery NoSQLQueries = "COPY Dependencies (ForeignKey text, MainTable text, MainColumn text, DependTable text, DependColumn) FROM STDIN"
-)

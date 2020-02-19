@@ -47,8 +47,7 @@ func (mn *Manager) GetSchemaFromSQl() error {
 func (mn *Manager) PutSchemaToNoSQL() error {
 	var err error
 	mn.wg.Add(1)
-	defer mn.wg.Done()
-	mn.cass, err = CreateCassandra(mn.posg.DbData.Databasename)
+	mn.cass, err = CreateCassandra()
 	if err != nil {
 		return err
 	}
@@ -56,7 +55,7 @@ func (mn *Manager) PutSchemaToNoSQL() error {
 	if err != nil {
 		return err
 	}
-
+	defer mn.wg.Done()
 	return err
 }
 
@@ -64,7 +63,6 @@ func (mn *Manager) PutSchemaToNoSQL() error {
 func (mn *Manager) GetDataFromSQL() error {
 	var err error
 	mn.wg.Add(1)
-	defer mn.wg.Done()
 	go func() error {
 		var err error
 		for tablename, tsl := range mn.cass.TableInsert {
@@ -79,5 +77,6 @@ func (mn *Manager) GetDataFromSQL() error {
 		}
 		return err
 	}()
+	defer mn.wg.Done()
 	return err
 }

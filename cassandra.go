@@ -13,53 +13,45 @@ const HOST = "127.0.0.1"
 
 // Cassandra structure to handle connection to Cassandra DB
 type Cassandra struct {
-	//name of keyspace
-	clName string
 	//map of tables - key:tablename-data - [0] string of create query, [1] string of insert query
 	TableInsert map[string][]string
-	//active Casssandra cluster
-	clust *gocql.ClusterConfig
-	//active session
-	sess *gocql.Session
 }
 
 // CreateCassandra create new instance of Cassandra handle
-func CreateCassandra(dbname string) (*Cassandra, error) {
-	cluster := gocql.NewCluster(HOST)
-	cluster.Consistency = gocql.Quorum
-	activesess, err := cluster.CreateSession()
+func CreateCassandra() (*Cassandra, error) {
+	err := CheckSesion()
 	if err != nil {
-		fmt.Println(err)
 		return nil, err
 	}
 	// Drop keyspace if exist
-	err = activesess.Query(strings.Join([]string{"DROP KEYSPACE IF EXISTS", dbname}, " ")).Exec()
+	err = CassandraSession.Query(strings.Join([]string{"DROP KEYSPACE IF EXISTS", DBKeyspace}, " ")).Exec()
 	if err != nil {
 		log.Println(err)
 	}
-	str := strings.Join([]string{"CREATE KEYSPACE", dbname, "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"}, " ")
-	err = activesess.Query(str).Exec()
+	str := strings.Join([]string{"CREATE KEYSPACE", DBKeyspace, "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"}, " ")
+	err = CassandraSession.Query(str).Exec()
 	if err != nil {
 		log.Println(err)
 	}
-	cluster.Keyspace = dbname
-
+	//	CassandraCluster.Keyspace = DBKeyspace
 	return &Cassandra{
-		clName:      dbname,
 		TableInsert: make(map[string][]string),
-		sess:        activesess,
-		clust:       cluster,
 	}, err
 }
 
 // CheckSesion check if session is open, if not then Open session, if could't return error
-func (cs *Cassandra) CheckSesion() error {
+func CheckSesion() error {
 	var err error
-	if cs.sess.Closed() {
-		activesess, err := cs.clust.CreateSession()
-		if err == nil {
-			cs.sess = activesess
+	if CassandraSession == nil {
+		if CassandraCluster == nil {
+			CassandraCluster := gocql.NewCluster(HOST)
+			CassandraSession, err = CassandraCluster.CreateSession()
 		}
+	} else if CassandraSession.Closed() {
+		CassandraSession, err = CassandraCluster.CreateSession()
+	}
+	if err != nil {
+		fmt.Println(err)
 	}
 	return err
 }
@@ -76,29 +68,38 @@ func (cs *Cassandra) CreateTableScheme(dbD *DatabasePostg) error {
 // CreateQueryForTable creates string of create and input query for selected table
 func (cs *Cassandra) CreateQueryForTable(tablename string, tab Table) {
 	var col Column
-	var tmpcreate, tmpinsdata, tmpinsert []string
+	var tmpcreate, tmpinsdata, tmpinsert, cp []string
+	c := ""
+	cf1 := ""
+	cf2 := ""
 	for _, col = range tab.Columns {
-		c := ""
+
 		if col.Pk {
 			c = "PRIMARY KEY"
+			cp = append(cp, col.Cname)
+			cf1 = "("
+			cf2 = ")"
 		}
 
 		tmpcreate = append(tmpcreate, strings.Join([]string{col.Cname, ConvTypePostgCasan()[col.Ctype], c}, " "))
 		tmpinsert = append(tmpinsert, col.Cname)
 		tmpinsdata = append(tmpinsdata, "?")
 	}
-	screate := fmt.Sprintf("CREATE TABLE %s (%s)", tablename, strings.Join(tmpcreate, ","))
-	sinsert := fmt.Sprintf("COPY %s (%s) VALUES (%s) FROM STDIN", tablename, strings.Join(tmpinsert, ","), strings.Join(tmpinsdata, ","))
+	cpi := strings.Join(cp, ",")
+	tmpprimary := strings.Join([]string{c, cf1, cpi, cf2}, " ")
+	tmpcreate = append(tmpcreate, tmpprimary)
+	screate := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (%s)", DBKeyspace, tablename, strings.Join(tmpcreate, ","))
+	sinsert := fmt.Sprintf("COPY %s.%s (%s) VALUES (%s) FROM STDIN", DBKeyspace, tablename, strings.Join(tmpinsert, ","), strings.Join(tmpinsdata, ","))
 	cs.TableInsert[tablename] = []string{screate, sinsert}
 }
 
 // CopyDataToDB write data to Cassandra table "tableName"
 func (cs *Cassandra) CopyDataToDB(copyquery string, rows *sql.Rows) error {
-	err := cs.CheckSesion()
+	err := CheckSesion()
 	if err != nil {
 		return err
 	}
-	if err := cs.sess.Query(copyquery, rows).Exec(); err != nil {
+	if err := CassandraSession.Query(copyquery, rows).Exec(); err != nil {
 		log.Println(err)
 	}
 	return err
@@ -106,7 +107,7 @@ func (cs *Cassandra) CopyDataToDB(copyquery string, rows *sql.Rows) error {
 
 // WriteSchemaToDB runs specific Cassandra query
 func (cs *Cassandra) WriteSchemaToDB() error {
-	err := cs.CheckSesion()
+	err := CheckSesion()
 	if err != nil {
 		return err
 	}
@@ -115,7 +116,7 @@ func (cs *Cassandra) WriteSchemaToDB() error {
 			createStr := tab[0]
 			if createStr != "" {
 
-				if err := cs.sess.Query(createStr).Exec(); err != nil {
+				if err := CassandraSession.Query(createStr).Exec(); err != nil {
 					log.Println(err)
 				}
 			}
