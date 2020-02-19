@@ -1,33 +1,43 @@
 package main
 
-import (
-	"database/sql"
-	"fmt"
-	"os"
-)
+type Column struct {
+	Cname string
+	Ctype string
+	Pk    bool
+}
+
+type Table struct {
+	Columns []Column
+}
+
+type ForeignKey struct {
+	Tablename string
+	Colname   string
+	Tableref  string
+	Colref    string
+}
 
 type DatabasePostg struct {
-	dbname     string
-	table      map[string][]string
-	primkey    map[string][]string
-	foreignkey map[string][]string
+	Databasename string
+	Tables       map[string]Table
+	Foreignkeys  map[string]ForeignKey
 }
 
-func InitConnStr() (dbdriver string, connstr string) {
-	// Later we change this init strings, its only for developing
-	cstr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", os.Getenv("HOST"), os.Getenv("PORT"), os.Getenv("USER"), os.Getenv("PASSWORD"), os.Getenv("DBNAME"))
-	dbd := "postgres"
-	return dbd, cstr
+// MakePrimaryKey change column to primary key
+func (c *Column) MakePrimaryKey() {
+	c.Pk = true
 }
 
-func InitDB(dbdriver string, connstr string) (*sql.DB, error) {
-	return sql.Open(dbdriver, connstr)
+// SetDBName set a name of DB to our structure
+func (ds *DatabasePostg) SetDBName(name string) {
+	ds.Databasename = name
 }
 
-func ReadPgSQLQueue() (m map[int]SQLQueries) {
-	mmm := make(map[int]SQLQueries, 3)
-	mmm[0] = Tables
-	mmm[1] = PrimaryKeys
-	mmm[2] = ForeignKeys
-	return mmm
+// NewDatabasePostg create a new instance of DatabasePostg
+func NewDatabasePostg() *DatabasePostg {
+	return &DatabasePostg{
+		Databasename: "",
+		Tables:       make(map[string]Table),
+		Foreignkeys:  make(map[string]ForeignKey),
+	}
 }

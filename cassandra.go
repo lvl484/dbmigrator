@@ -4,136 +4,121 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gocql/gocql"
 )
 
 const HOST = "localhost"
 
+// Cassandra structure to handle connection to Cassandra DB
 type Cassandra struct {
-	clName      string
-	TableInsert map[string]string
-	clust       *gocql.ClusterConfig
-	csCQL       map[int]NoSQLQueries
+	//name of keyspace
+	clName string
+	//map of tables - key:tablename-data - [0] string of create query, [1] string of insert query
+	TableInsert map[string][]string
+	//active Casssandra cluster
+	clust *gocql.ClusterConfig
+	//active session
+	sess *gocql.Session
 }
 
-func CreateCassandra(dbname string) *Cassandra {
+// CreateCassandra create new instance of Cassandra handle
+func CreateCassandra(dbname string) (*Cassandra, error) {
 	cluster := gocql.NewCluster(HOST)
 	cluster.Consistency = gocql.Quorum
-	session, _ := cluster.CreateSession()
-	defer session.Close()
-
-	err := session.Query(`DROP KEYSPACE IF EXISTS ` + dbname).Exec()
+	activesess, err := cluster.CreateSession()
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-
-	err = session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
-    WITH replication = {
-        'class' : 'SimpleStrategy',
-        'replication_factor' : %d
-    }`, dbname, 1)).Exec()
-
+	// Drop keyspace if exist
+	err = activesess.Query(fmt.Sprintf(string(DropKeyspaceQuery), dbname)).Exec()
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	csq := initCassQuery()
-	cluster.Keyspace = dbname
-	mm := make(map[string]string)
-
-	return &Cassandra{
-		clName:      dbname,
-		TableInsert: mm,
-		clust:       cluster,
-		csCQL:       csq,
-	}
-}
-
-func initCassQuery() map[int]NoSQLQueries {
-	q := make(map[int]NoSQLQueries, 4)
-	q[0] = CreateTables
-	q[1] = InsertDataTable
-	q[2] = MakeForeignKeys
-	q[3] = InsertForeignKeys
-	return q
-}
-
-func (cs *Cassandra) InputData(tableName string, chIn <-chan *sql.Rows) {
-	session, _ := cs.clust.CreateSession()
-	defer session.Close()
-	var srows *sql.Rows
-	srows = <-chIn
-	for srows.Next() {
-		if err := session.Query(cs.TableInsert[tableName], srows.Scan()).Exec(); err != nil {
-			log.Println(err)
-		}
-	}
-
-}
-
-func (cs *Cassandra) RunQuery(order int, parnum int, chIn <-chan []string) {
-	session, _ := cs.clust.CreateSession()
-	defer session.Close()
-
-	var ss, ds []string
-	ss = <-chIn
-	qs, is := cs.PrepareQS(order, parnum, len(ss))
-	ds = cs.PrepareData(order, parnum, ss, is)
-	if err := session.Query(qs, ds).Exec(); err != nil {
 		log.Println(err)
 	}
+
+	err = activesess.Query(fmt.Sprintf(string(CreateKeyspaceQuery), dbname, 1)).Exec()
+	if err != nil {
+		log.Println(err)
+	}
+
+	cluster.Keyspace = dbname
+
+	return &Cassandra{
+		clName: dbname,
+		sess:   activesess,
+		clust:  cluster,
+	}, err
 }
 
-func (cs *Cassandra) PrepareData(order int, parnum int, ss []string, inpstr string) []string {
-	var newss []string
-	newss = append(newss, ss[0])
-	instr := fmt.Sprintf("INSERT INTO %s (", ss[0])
-	for i := 1; i < len(ss)-parnum; i++ {
-		newss = append(newss, fmt.Sprintf("%s %s", ss[i], ConvTypePostgCasan()[ss[i+1]]))
-		if i == (len(ss) - parnum - 2) {
-			instr += fmt.Sprintf(" %s", ss[i])
-		} else {
-			instr += fmt.Sprintf(" %s,", ss[i])
-		}
-		i++
-	}
-	instr += fmt.Sprintf(") VALUES (%s) FROM STDIN", inpstr)
-	cs.TableInsert[ss[0]] = instr
-	for i := len(ss) - parnum; i < len(ss); i++ {
-		newss = append(newss, ss[i])
-	}
-	return newss
-}
-
-func (cs *Cassandra) PrepareQS(order int, parnum int, countpar int) (string, string) {
-	ss := ""
-	var ins, si string
-	switch order {
-	case 1:
-		i := countpar - 1 - parnum
-		si, ins = retSQLstring(i/2, parnum)
-		ss = string(cs.csCQL[0]) + si
-	case 2:
-	}
-	return ss, ins
-}
-
-func retSQLstring(ct int, pr int) (string, string) {
-	ss := ""
-	is := ""
-	for i := 0; i < ct; i++ {
-		if i == (ct - 1) {
-			ss += "? ?"
-			is += " ?"
-		} else {
-			ss += "? ?,"
-			is += " ?, "
+// CheckSesion check if session is open, if not then Open session, if could't return error
+func (cs *Cassandra) CheckSesion() error {
+	var err error
+	if cs.sess.Closed() {
+		activesess, err := cs.clust.CreateSession()
+		if err == nil {
+			cs.sess = activesess
 		}
 	}
-	for i := 0; i < pr; i++ {
-		ss += ", ? "
+	return err
+}
+
+// CreateTableScheme creates schema of tables in Cassandra
+func (cs *Cassandra) CreateTableScheme(dbD *DatabasePostg) error {
+	for tablesh, tabc := range dbD.Tables {
+		cs.CreateQueryForTable(tablesh, tabc)
 	}
-	ss += ")"
-	return ss, is
+	err := cs.WriteSchemaToDB()
+	return err
+}
+
+// CreateQueryForTable creates string of create and input query for selected table
+func (cs *Cassandra) CreateQueryForTable(tablename string, tab Table) {
+	var col Column
+	var tmpcreate, tmpinsdata, tmpinsert []string
+	for _, col = range tab.Columns {
+		c := ""
+		if col.Pk {
+			c = "PRIMARY KEY"
+		}
+
+		tmpcreate = append(tmpcreate, strings.Join([]string{col.Cname, ConvTypePostgCasan()[col.Ctype], c}, " "))
+		tmpinsert = append(tmpinsert, col.Cname)
+		tmpinsdata = append(tmpinsdata, "?")
+	}
+	screate := fmt.Sprintf("CREATE TABLE %s (%s)", tablename, strings.Join(tmpcreate, ","))
+	sinsert := fmt.Sprintf("COPY %s (%s) VALUES (%s) FROM STDIN", tablename, strings.Join(tmpinsert, ","), strings.Join(tmpinsdata, ","))
+	cs.TableInsert[tablename] = []string{screate, sinsert}
+}
+
+// CopyDataToDB write data to Cassandra table "tableName"
+func (cs *Cassandra) CopyDataToDB(copyquery string, rows *sql.Rows) error {
+	err := cs.CheckSesion()
+	if err != nil {
+		return err
+	}
+	if err := cs.sess.Query(copyquery, rows).Exec(); err != nil {
+		log.Println(err)
+	}
+	return err
+}
+
+// WriteSchemaToDB runs specific Cassandra query
+func (cs *Cassandra) WriteSchemaToDB() error {
+	err := cs.CheckSesion()
+	if err != nil {
+		return err
+	}
+	for _, tab := range cs.TableInsert {
+		if len(tab) > 0 {
+			createStr := tab[0]
+			if createStr != "" {
+
+				if err := cs.sess.Query(createStr).Exec(); err != nil {
+					log.Println(err)
+				}
+			}
+		}
+	}
+	return err
 }

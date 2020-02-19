@@ -4,124 +4,174 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
 	_ "github.com/lib/pq"
 )
 
 type SQLPostgres struct {
 	pdb    *sql.DB
-	cass   *Cassandra
-	dbData *DatabasePostg
-	qrSQL  map[int]SQLQueries
+	DbData *DatabasePostg
 }
 
-func NewSQLPostgre() *SQLPostgres {
-	dbdrv, constr := InitConnStr()
-	db, err := InitDB(dbdrv, constr)
+// newSQLPostgres create a new instance of SQLPostgres which provide connection with Postgresql DB
+func newSQLPostgres() (*SQLPostgres, error) {
+	cstr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		os.Getenv("HOST"), os.Getenv("PORT"), os.Getenv("USER"), os.Getenv("PASSWORD"), os.Getenv("DBNAME"))
+	//	cstr := "postgres://ignoytgaflffcm:16413c58cff7b9c1a445caf4e10fb0fd4f02621464f04ea1a8b83daf8db1c70d@ec2-46-137-156-205.eu-west-1.compute.amazonaws.com:5432/d4smbs2o7scu21"
+	dbd := "postgres"
+	database, err := sql.Open(dbd, cstr)
+
 	if err != nil {
 		log.Println(err)
 	}
+	datapostg := NewDatabasePostg()
 	return &SQLPostgres{
-		pdb:   db,
-		qrSQL: ReadPgSQLQueue(),
+		pdb:    database,
+		DbData: datapostg,
+	}, err
+}
+func (sp *SQLPostgres) DatabaseSQL() (error, *sql.DB) {
+	err := sp.pdb.Ping()
+	if err != nil {
+		return err, nil
+	}
+	return err, sp.pdb
+}
+
+// AddPrimaryKey add PRIMARY KEY to table by column name
+func (sp *SQLPostgres) AddPrimaryKey(tabl string, col string) {
+	t, ok := sp.DbData.Tables[tabl]
+	if ok {
+
+		colum := t.Columns
+		if len(colum) > 0 {
+			for _, c := range colum {
+				if c.Cname == col {
+					c.MakePrimaryKey()
+					break
+				}
+			}
+		}
+	} else {
+		log.Printf("Failed to create PRIMARY KEY on Table: %s column: %s", tabl, col)
 	}
 }
 
-func (sp *SQLPostgres) GetSchemaFromSQl() {
-	sp.ExecPGQuery(0, DbName)
-	for i, q := range sp.qrSQL {
-		go sp.ExecPGQuery(i+1, q)
+// AddForeignKey add Foreign keys by it's constraint name
+func (sp *SQLPostgres) AddForeignKey(constrname string, forkey ForeignKey) {
+	sp.DbData.Foreignkeys[constrname] = forkey
+}
+
+// AddColumnToTable add column to table
+func (sp *SQLPostgres) AddColumnToTable(tname string, col Column) {
+	var tab Table
+	tab, ok := sp.DbData.Tables[tname]
+	if ok {
+		tab.Columns = append(tab.Columns, col)
+	} else {
+		cols := []Column{col}
+		tab.Columns = append(tab.Columns, cols...)
+		sp.DbData.Tables[tname] = tab
 	}
 }
 
-func (sp *SQLPostgres) PutSchemaToNoSQL() {
-	for _, tabs := range sp.dbData.table {
-		i, ss := sp.CreatePrimaryField(tabs[0])
-		ss = append(tabs, ss...)
-		go sp.WriteToCassandra(1, i, ss)
+// ReadDBName read DB name
+func (sp *SQLPostgres) ReadDBName() error {
+	err, db := sp.DatabaseSQL()
+	if err != nil {
+		log.Println(err)
 	}
-	go sp.WriteToCassandra(2, 0, nil)
-
-}
-
-func (sp *SQLPostgres) CreatePrimaryField(tabl string) (int, []string) {
-	var ss []string
-	for _, pk := range sp.dbData.primkey[tabl] {
-		ss = append(ss, fmt.Sprintf("PRIMARY KEY ( %s )", pk))
+	var ss string
+	err = db.QueryRow(string(DbNameQuery)).Scan(&ss)
+	if err != nil {
+		log.Println(err)
 	}
-	i := len(sp.dbData.primkey[tabl])
-	return i, ss
+	sp.DbData.SetDBName(ss)
+	return err
 }
 
-func (sp *SQLPostgres) GetDataFromSQL() {
-
-	go sp.ExecPGQuery(3, DataTables)
-}
-
-func (sp *SQLPostgres) PutDataToNoSQL(tn string, rows *sql.Rows) {
-	ch := make(chan *sql.Rows)
-	defer close(ch)
-	ch <- rows
-	go sp.cass.InputData(tn, ch)
-}
-
-func (sp *SQLPostgres) ExecPGQuery(order int, sq SQLQueries) {
-	switch order {
-	case 0:
-		err := sp.pdb.QueryRow(string(sq)).Scan(sp.dbData.dbname)
+// ReadTableSchema reads schema of tables from SQL entry
+func (sp *SQLPostgres) ReadTableSchema() error {
+	err, db := sp.DatabaseSQL()
+	if err != nil {
+		log.Println(err)
+	}
+	rows, err := db.Query(string(TablesQuery), sp.DbData.Databasename)
+	if err != nil {
+		log.Println(err)
+	}
+	defer rows.Close()
+	//tb.table_name, ordinal_position, column_name, data_type
+	for rows.Next() {
+		var tn, cn, dt string
+		var pos int
+		err = rows.Scan(tn, pos, cn, dt)
 		if err != nil {
 			log.Println(err)
 		}
-		sp.cass = CreateCassandra(sp.dbData.dbname)
-	case 3:
-		for _, tab := range sp.dbData.table {
-			tn := tab[0]
-			rows, err := sp.pdb.Query(string(sq), tn)
-			if err != nil {
-				log.Println(err)
-			}
-			defer rows.Close()
-			sp.PutDataToNoSQL(tn, rows)
-		}
+		col := Column{Cname: cn, Ctype: dt, Pk: false}
+		sp.AddColumnToTable(tn, col)
+	}
+	return err
+}
 
-	default:
-		dbnam := sp.dbData.dbname
-		rows, err := sp.pdb.Query(string(sq), dbnam)
+// ReadPrimaryKeys reads Primary keys of tables from SQL entry
+func (sp *SQLPostgres) ReadPrimaryKeys() error {
+	err, db := sp.DatabaseSQL()
+	if err != nil {
+		log.Println(err)
+	}
+	rows, err := db.Query(string(PrimaryKeysQuery), sp.DbData.Databasename)
+	if err != nil {
+		log.Println(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var st, sc string
+		err = rows.Scan(&st, &sc)
 		if err != nil {
 			log.Println(err)
 		}
-		defer rows.Close()
-		s := make([]string, 4)
-		ch := make(chan []string, 1)
-		defer close(ch)
+		sp.AddPrimaryKey(st, sc)
+	}
+	return err
+}
 
-		for rows.Next() {
-			err = rows.Scan(s)
-			if err != nil {
-				log.Println(err)
-			}
-			ch <- s
-			go sp.CreateData(order, ch)
+// ReadForeignKeys reads foreign key
+func (sp *SQLPostgres) ReadForeignKeys() error {
+	err, db := sp.DatabaseSQL()
+	if err != nil {
+		log.Println(err)
+	}
+	rows, err := db.Query(string(ForeignKeysQuery), sp.DbData.Databasename)
+	if err != nil {
+		log.Println(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f ForeignKey
+		var s string
+		err = rows.Scan(&s, &f.Tablename, &f.Colname, &f.Tableref, &f.Colref)
+		if err != nil {
+			log.Println(err)
 		}
+		sp.AddForeignKey(s, f)
 	}
+	return err
 }
 
-func (sp *SQLPostgres) CreateData(order int, chOut <-chan []string) {
-	ss := <-chOut
-	switch order {
-	case 1:
-		sp.dbData.table[ss[0]] = append(sp.dbData.table[ss[0]], ss[2:]...)
-	case 2:
-		sp.dbData.primkey[ss[0]] = append(sp.dbData.primkey[ss[0]], ss[1:]...)
-	case 3:
-		sp.dbData.foreignkey[ss[0]] = append(sp.dbData.foreignkey[ss[0]], ss[1:]...)
+// ReadForeignKeys reads foreign key
+func (sp *SQLPostgres) ReadDataFromTable(tablename string) (error, *sql.Rows) {
+	err, db := sp.DatabaseSQL()
+	if err != nil {
+		log.Println(err)
 	}
-
-}
-
-func (sp *SQLPostgres) WriteToCassandra(order int, parnum int, ds []string) {
-	ch := make(chan []string, 1)
-	defer close(ch)
-	ch <- ds
-	go sp.cass.RunQuery(order, parnum, ch)
+	rows, err := db.Query(string(DataTablesQuery), tablename)
+	if err != nil {
+		log.Println(err)
+	}
+	//&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+	defer rows.Close()
+	return err, rows
 }
