@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-
-	"github.com/gocql/gocql"
 )
 
 const HOST = "127.0.0.1"
@@ -19,17 +17,13 @@ type Cassandra struct {
 
 // CreateCassandra create new instance of Cassandra handle
 func CreateCassandra() (*Cassandra, error) {
-	err := CheckSesion()
-	if err != nil {
-		return nil, err
-	}
 	// Drop keyspace if exist
-	err = CassandraSession.Query(strings.Join([]string{"DROP KEYSPACE IF EXISTS", DBKeyspace}, " ")).Exec()
-	if err != nil {
-		log.Println(err)
-	}
-	str := strings.Join([]string{"CREATE KEYSPACE", DBKeyspace, "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"}, " ")
-	err = CassandraSession.Query(str).Exec()
+	//	err := CassandraSession.Query(strings.Join([]string{"DROP KEYSPACE IF EXISTS", DBKeyspace}, " ")).Exec()
+	//	if err != nil {
+	//		log.Println(err)
+	//	}
+	str := strings.Join([]string{"CREATE KEYSPACE IF NOT EXISTS", DBKeyspace, "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"}, " ")
+	err := CassandraSession.Query(str).Exec()
 	if err != nil {
 		log.Println(err)
 	}
@@ -37,23 +31,6 @@ func CreateCassandra() (*Cassandra, error) {
 	return &Cassandra{
 		TableInsert: make(map[string][]string),
 	}, err
-}
-
-// CheckSesion check if session is open, if not then Open session, if could't return error
-func CheckSesion() error {
-	var err error
-	if CassandraSession == nil {
-		if CassandraCluster == nil {
-			CassandraCluster := gocql.NewCluster(HOST)
-			CassandraSession, err = CassandraCluster.CreateSession()
-		}
-	} else if CassandraSession.Closed() {
-		CassandraSession, err = CassandraCluster.CreateSession()
-	}
-	if err != nil {
-		fmt.Println(err)
-	}
-	return err
 }
 
 // CreateTableScheme creates schema of tables in Cassandra
@@ -81,7 +58,7 @@ func (cs *Cassandra) CreateQueryForTable(tablename string, tab Table) {
 			cf2 = ")"
 		}
 
-		tmpcreate = append(tmpcreate, strings.Join([]string{col.Cname, ConvTypePostgCasan()[col.Ctype], c}, " "))
+		tmpcreate = append(tmpcreate, strings.Join([]string{col.Cname, ConvTypePostgCasan()[col.Ctype]}, " "))
 		tmpinsert = append(tmpinsert, col.Cname)
 		tmpinsdata = append(tmpinsdata, "?")
 	}
@@ -95,11 +72,8 @@ func (cs *Cassandra) CreateQueryForTable(tablename string, tab Table) {
 
 // CopyDataToDB write data to Cassandra table "tableName"
 func (cs *Cassandra) CopyDataToDB(copyquery string, rows *sql.Rows) error {
-	err := CheckSesion()
+	err := CassandraSession.Query(copyquery, rows).Exec()
 	if err != nil {
-		return err
-	}
-	if err := CassandraSession.Query(copyquery, rows).Exec(); err != nil {
 		log.Println(err)
 	}
 	return err
@@ -107,16 +81,13 @@ func (cs *Cassandra) CopyDataToDB(copyquery string, rows *sql.Rows) error {
 
 // WriteSchemaToDB runs specific Cassandra query
 func (cs *Cassandra) WriteSchemaToDB() error {
-	err := CheckSesion()
-	if err != nil {
-		return err
-	}
+	var err error
 	for _, tab := range cs.TableInsert {
 		if len(tab) > 0 {
 			createStr := tab[0]
 			if createStr != "" {
-
-				if err := CassandraSession.Query(createStr).Exec(); err != nil {
+				err = CassandraSession.Query(createStr).Exec()
+				if err != nil {
 					log.Println(err)
 				}
 			}
