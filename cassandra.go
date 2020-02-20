@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -17,20 +16,15 @@ type Cassandra struct {
 
 // CreateCassandra create new instance of Cassandra handle
 func CreateCassandra() (*Cassandra, error) {
-	// Drop keyspace if exist
-	//	err := CassandraSession.Query(strings.Join([]string{"DROP KEYSPACE IF EXISTS", DBKeyspace}, " ")).Exec()
-	//	if err != nil {
-	//		log.Println(err)
-	//	}
+
 	str := strings.Join([]string{"CREATE KEYSPACE IF NOT EXISTS", DBKeyspace, "WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };"}, " ")
 	err := CassandraSession.Query(str).Exec()
 	if err != nil {
-		log.Println(err)
+		return nil, err
 	}
-	//	CassandraCluster.Keyspace = DBKeyspace
 	return &Cassandra{
 		TableInsert: make(map[string][]string),
-	}, err
+	}, nil
 }
 
 // CreateTableScheme creates schema of tables in Cassandra
@@ -73,8 +67,9 @@ func (cs *Cassandra) CreateQueryForTable(tablename string, tab Table) {
 // CopyDataToDB write data to Cassandra table "tableName"
 func (cs *Cassandra) CopyDataToDB(copyquery string, rows *sql.Rows) error {
 	err := CassandraSession.Query(copyquery, rows).Exec()
+	fmt.Printf("Writin data from %s", copyquery)
 	if err != nil {
-		log.Println(err)
+		return err
 	}
 	return err
 }
@@ -88,7 +83,7 @@ func (cs *Cassandra) WriteSchemaToDB() error {
 			if createStr != "" {
 				err = CassandraSession.Query(createStr).Exec()
 				if err != nil {
-					log.Println(err)
+					return err
 				}
 			}
 		}

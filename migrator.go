@@ -44,6 +44,7 @@ func main() {
 		fmt.Println("There is some problem with getting data from database")
 		return
 	}
+
 	MigratorManager.wg.Wait()
 
 }

@@ -66,7 +66,7 @@ func (mn *Manager) GetDataFromSQL() error {
 	go func() error {
 		var err error
 		for tablename, tsl := range mn.cass.TableInsert {
-			err, rows := mn.posg.ReadDataFromTable(tablename)
+			rows, err := mn.posg.ReadDataFromTable(tablename)
 			if err != nil {
 				return err
 			}
@@ -77,6 +77,7 @@ func (mn *Manager) GetDataFromSQL() error {
 		}
 		return err
 	}()
-	defer mn.wg.Done()
+	defer mn.wg.Done() //??????????
+	mn.wg.Wait()
 	return err
 }
