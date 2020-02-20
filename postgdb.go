@@ -16,8 +16,7 @@ type SQLPostgres struct {
 
 // newSQLPostgres create a new instance of SQLPostgres which provide connection with Postgresql DB
 func newSQLPostgres() (*SQLPostgres, error) {
-	cstr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s ",
-		os.Getenv("HOST"), os.Getenv("PORT"), os.Getenv("USER"), os.Getenv("PASSWORD"), os.Getenv("DBNAME"))
+	cstr := fmt.Sprintf(PostgresConfDB, os.Getenv("HOST"), os.Getenv("PORT"), os.Getenv("USER"), os.Getenv("PASSWORD"), os.Getenv("DBNAME"))
 	dbd := "postgres"
 	database, err := sql.Open(dbd, cstr)
 
@@ -30,6 +29,8 @@ func newSQLPostgres() (*SQLPostgres, error) {
 		DbData: datapostg,
 	}, nil
 }
+
+// DatabaseSQL check connection with DB
 func (sp *SQLPostgres) DatabaseSQL() (*sql.DB, error) {
 	err := sp.pdb.Ping()
 	if err != nil {
@@ -69,19 +70,17 @@ func (sp *SQLPostgres) AddColumnToTable(tname string, col Column) {
 }
 
 // ReadDBName read DB name
-func (sp *SQLPostgres) ReadDBName() error {
+func (sp *SQLPostgres) ReadDBName() (string, error) {
 	db, err := sp.DatabaseSQL()
 	if err != nil {
-		return err
+		return "", err
 	}
 	var ss string
 	err = db.QueryRow(string(DbNameQuery)).Scan(&ss)
 	if err != nil {
-		return err
+		return "", err
 	}
-	sp.DbData.SetDBName(ss)
-
-	return err
+	return ss, err
 }
 
 // ReadTableSchema reads schema of tables from SQL entry
@@ -90,7 +89,7 @@ func (sp *SQLPostgres) ReadTableSchema() error {
 	if err != nil {
 		return err
 	}
-	rows, err := db.Query(TablesQuery, sp.DbData.Databasename)
+	rows, err := db.Query(TablesSchemaQuery, sp.DbData.Databasename)
 	if err != nil {
 		log.Println(err)
 	}
@@ -121,12 +120,12 @@ func (sp *SQLPostgres) ReadPrimaryKeys() error {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var st, sc string
-		err = rows.Scan(&st, &sc)
+		var tablename, columnname string
+		err = rows.Scan(&tablename, &columnname)
 		if err != nil {
 			return err
 		}
-		sp.AddPrimaryKey(st, sc)
+		sp.AddPrimaryKey(tablename, columnname)
 	}
 	return err
 }
@@ -143,13 +142,13 @@ func (sp *SQLPostgres) ReadForeignKeys() error {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var f ForeignKey
-		var s string
-		err = rows.Scan(&s, &f.Tablename, &f.Colname, &f.Tableref, &f.Colref)
+		var foreignkey ForeignKey
+		var constraintname string
+		err = rows.Scan(&constraintname, &foreignkey.Tablename, &foreignkey.Colname, &foreignkey.Tableref, &foreignkey.Colref)
 		if err != nil {
 			return err
 		}
-		sp.AddForeignKey(s, f)
+		sp.AddForeignKey(constraintname, foreignkey)
 	}
 	return err
 }
@@ -161,7 +160,7 @@ func (sp *SQLPostgres) ReadDataFromTable(tablename string) (*sql.Rows, error) {
 		return nil, err
 	}
 	rows, err := db.Query(DataTablesQuery, tablename)
-	fmt.Printf("Reading data from %s", tablename) // it's for testing
+	fmt.Printf("Reading data from %s", tablename) // it's for testing!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	if err != nil {
 		return nil, err
 	}

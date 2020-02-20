@@ -14,18 +14,33 @@ type Manager struct {
 // NewManager create a new instance of structure Manager
 func NewManager() (*Manager, error) {
 	pgdb, err := newSQLPostgres()
+	if err != nil {
+		return nil, err
+	}
+	cassand, err := NewCassandra()
+	if err != nil {
+		return nil, err
+	}
 	return &Manager{
+		cass: cassand,
 		posg: pgdb,
 	}, err
 }
 
+// SetKeyspace set a keyspace and name of DB to our structure
+func (mn *Manager) SetKeyspace(keyspasename string) {
+	mn.posg.DbData.Databasename = keyspasename
+	mn.cass.DBKeyspace = keyspasename
+}
+
 // GetSchemaFromSQl takes schema of tables from SQL entries
-func (mn *Manager) GetSchemaFromSQl() error {
+func (mn *Manager) GetSchemaFromSQL() error {
 	mn.wg.Add(1)
-	err := mn.posg.ReadDBName()
+	keyspname, err := mn.posg.ReadDBName()
 	if err != nil {
 		return err
 	}
+	mn.SetKeyspace(keyspname)
 	err = mn.posg.ReadTableSchema()
 	if err != nil {
 		return err
@@ -47,7 +62,7 @@ func (mn *Manager) GetSchemaFromSQl() error {
 func (mn *Manager) PutSchemaToNoSQL() error {
 	var err error
 	mn.wg.Add(1)
-	mn.cass, err = CreateCassandra()
+	err = mn.cass.CreateKeyspaceCassandra()
 	if err != nil {
 		return err
 	}
@@ -62,22 +77,37 @@ func (mn *Manager) PutSchemaToNoSQL() error {
 // GetDataFromSQL reading data from SQL entries according to schema
 func (mn *Manager) GetDataFromSQL() error {
 	var err error
-	mn.wg.Add(1)
-	go func() error {
-		var err error
-		for tablename, tsl := range mn.cass.TableInsert {
-			rows, err := mn.posg.ReadDataFromTable(tablename)
-			if err != nil {
-				return err
-			}
-			err = mn.cass.CopyDataToDB(tsl[1], rows)
-			if err != nil {
-				return err
-			}
+	for tablename, tab := range mn.cass.TableQueries {
+		errchanel := make(chan error, 1)
+		go func() {
+			errchanel <- mn.ReaDataFromSingleTable(tablename, tab.QueryInsert)
+
+		}()
+		err = <-errchanel
+		if err != nil {
+			return err
 		}
-		return err
-	}()
-	defer mn.wg.Done() //??????????
+	}
 	mn.wg.Wait()
 	return err
+}
+
+// ReaDataFromSingleTable read data from SQL table and write it to NoSQL
+func (mn *Manager) ReaDataFromSingleTable(tablename string, tableInsQuery string) error {
+	mn.wg.Add(1)
+	rows, err := mn.posg.ReadDataFromTable(tablename)
+	if err != nil {
+		return err
+	}
+	err = mn.cass.CassandraSession.Query(tableInsQuery, rows).Exec()
+	if err != nil {
+		return err
+	}
+	mn.wg.Done()
+	return err
+}
+
+func (mn *Manager) CloseConnection() {
+	mn.cass.CassandraSession.Close()
+	mn.posg.pdb.Close()
 }
