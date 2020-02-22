@@ -16,7 +16,9 @@ type SQLPostgres struct {
 
 // newSQLPostgres create a new instance of SQLPostgres which provide connection with Postgresql DB
 func newSQLPostgres() (*SQLPostgres, error) {
-	cstr := fmt.Sprintf(PostgresConfDB, os.Getenv("HOST"), os.Getenv("PORT"), os.Getenv("USER"), os.Getenv("PASSWORD"), os.Getenv("DBNAME"))
+
+	cstr := fmt.Sprintf(PostgresConfDB, "localhost", os.Getenv("MIGRATION_PORT"), "postgres", "root", "dvdrental sslmode=disable")
+	//	cstr := fmt.Sprintf(PostgresConfDB, os.Getenv("MIGRATION_HOST"), os.Getenv("MIGRATION_PORT"), os.Getenv("MIGRATION_USER"), os.Getenv("MIGRATION_PASSWORD"), os.Getenv("MIGRATION_DBNAME"))
 	dbd := "postgres"
 	database, err := sql.Open(dbd, cstr)
 
@@ -67,6 +69,7 @@ func (sp *SQLPostgres) AddColumnToTable(tname string, col Column) {
 	tab := sp.DbData.Tables[tname]
 	tab.AddColumn(col)
 	sp.DbData.Tables[tname] = tab
+	fmt.Printf("%s  %s   %s\n", tname, col.Cname, col.Ctype)
 }
 
 // ReadDBName read DB name
@@ -154,13 +157,12 @@ func (sp *SQLPostgres) ReadForeignKeys() error {
 }
 
 // ReadForeignKeys reads foreign key
-func (sp *SQLPostgres) ReadDataFromTable(tablename string) (*sql.Rows, error) {
+func (sp *SQLPostgres) ReadDataFromTable(querystring string) (*sql.Rows, error) {
 	db, err := sp.DatabaseSQL()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(DataTablesQuery, tablename)
-	fmt.Printf("Reading data from %s", tablename) // it's for testing!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	rows, err := db.Query(querystring)
 	if err != nil {
 		return nil, err
 	}

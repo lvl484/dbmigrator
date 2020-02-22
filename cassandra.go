@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -10,10 +9,11 @@ import (
 )
 
 const HOST = "127.0.0.1"
-const cCBootstrapTimeout time.Duration = 5 * time.Second
+const cCBootstrapTimeout time.Duration = 9 * time.Second
 
 // TableQuery structure that holds two CQL queries for creating table and inserting data to it
 type TableQuery struct {
+	QuerySelect string
 	QueryCreate string
 	QueryInsert string
 }
@@ -64,30 +64,26 @@ func (cs *Cassandra) CreateTableScheme(dbD *DatabasePostg) error {
 // CreateQueryForTable creates string of create and input query for selected table
 func (cs *Cassandra) CreateQueryForTable(tablename string, tab Table) {
 	var col Column
-	var tmpcreate, tmpinsdata, tmpinsert, cp []string
+	var tmpselect, tmpcreate, tmpinsdata, tmpinsert, cp []string
 	for _, col = range tab.Columns {
 		if col.Pk {
 			cp = append(cp, col.Cname)
 		}
+		selectcolumn := "%s"
+		if CompareType(col.Ctype) {
+			selectcolumn = "CAST (%s as real)"
+		}
+		tmpselect = append(tmpselect, fmt.Sprintf(selectcolumn, col.Cname))
 		tmpcreate = append(tmpcreate, strings.Join([]string{col.Cname, ConvTypePostgCasan()[col.Ctype]}, " "))
 		tmpinsert = append(tmpinsert, col.Cname)
 		tmpinsdata = append(tmpinsdata, "?")
 	}
 	tmpprimary := fmt.Sprintf(CassandraPrimary, strings.Join(cp, ","))
+	queryselect := fmt.Sprintf(PostgresSelect, strings.Join(tmpselect, ","), tablename)
 	tmpcreate = append(tmpcreate, tmpprimary)
 	screate := fmt.Sprintf(CassandraTable, cs.DBKeyspace, tablename, strings.Join(tmpcreate, ","))
 	sinsert := fmt.Sprintf(CassandraCopyData, cs.DBKeyspace, tablename, strings.Join(tmpinsert, ","), strings.Join(tmpinsdata, ","))
-	cs.TableQueries[tablename] = TableQuery{screate, sinsert}
-}
-
-// CopyDataToDB write data to Cassandra table "tableName"
-func (cs *Cassandra) CopyDataToDB(copyquery string, rows *sql.Rows) error {
-	err := cs.CassandraSession.Query(copyquery, rows).Exec()
-	fmt.Printf("Write data from %s", copyquery) //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	if err != nil {
-		return err
-	}
-	return err
+	cs.TableQueries[tablename] = TableQuery{queryselect, screate, sinsert}
 }
 
 // WriteSchemaToDB runs specific Cassandra query

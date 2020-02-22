@@ -29,5 +29,5 @@ func main() {
 		fmt.Printf("There is some problem with getting data from database: %v\n", err)
 		return
 	}
-
+	fmt.Println("Thank you! Data were migrated from PostgreSQL to Cassandra!")
 }

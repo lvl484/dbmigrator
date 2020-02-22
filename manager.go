@@ -77,11 +77,10 @@ func (mn *Manager) PutSchemaToNoSQL() error {
 // GetDataFromSQL reading data from SQL entries according to schema
 func (mn *Manager) GetDataFromSQL() error {
 	var err error
-	for tablename, tab := range mn.cass.TableQueries {
+	for _, tab := range mn.cass.TableQueries {
 		errchanel := make(chan error, 1)
 		go func() {
-			errchanel <- mn.ReaDataFromSingleTable(tablename, tab.QueryInsert)
-
+			errchanel <- mn.ReaDataFromSingleTable(tab.QuerySelect, tab.QueryInsert)
 		}()
 		err = <-errchanel
 		if err != nil {
@@ -93,15 +92,30 @@ func (mn *Manager) GetDataFromSQL() error {
 }
 
 // ReaDataFromSingleTable read data from SQL table and write it to NoSQL
-func (mn *Manager) ReaDataFromSingleTable(tablename string, tableInsQuery string) error {
+func (mn *Manager) ReaDataFromSingleTable(selectquery string, insertquery string) error {
 	mn.wg.Add(1)
-	rows, err := mn.posg.ReadDataFromTable(tablename)
+	rows, err := mn.posg.ReadDataFromTable(selectquery)
 	if err != nil {
 		return err
 	}
-	err = mn.cass.CassandraSession.Query(tableInsQuery, rows).Exec()
+	cols, err := rows.Columns()
 	if err != nil {
 		return err
+	}
+	pointers := make([]interface{}, len(cols))
+	container := make([]interface{}, len(cols))
+	for i := 0; i < len(pointers); i++ {
+		pointers[i] = &container[i]
+	}
+	for rows.Next() {
+		err = rows.Scan(pointers...)
+		if err != nil {
+			return err
+		}
+		err = mn.cass.CassandraSession.Query(insertquery, container...).Exec()
+		if err != nil {
+			return err
+		}
 	}
 	mn.wg.Done()
 	return err

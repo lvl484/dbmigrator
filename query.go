@@ -13,13 +13,13 @@ var ConvTypePostgCasan = func() map[string]string {
 		`inet`:                        `inet`,
 		`date`:                        `date`,
 		`double precision`:            `double`,
-		`real`:                        `float`,
+		`real`:                        `double`,
 		`timestamp`:                   `timestamp`,
 		`decimal`:                     `decimal`,
 		`serial`:                      `counter`,
 		`timestamp without time zone`: `timestamp`,
 		`smallint`:                    `smallint`,
-		`numeric`:                     `decimal`,
+		`numeric`:                     `double`,
 		`USER-DEFINED`:                `text`,
 		`ARRAY`:                       `text`,
 		`tsvector`:                    `text`,
@@ -41,9 +41,27 @@ const (
 		JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name 
 		JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name 
 		where tc.table_schema = 'public' and constraint_type = 'FOREIGN KEY' and tc.table_catalog = $1;`
-	DataTablesQuery   = `SELECT * FROM $1`
+	PostgresSelect    = `SELECT %s FROM %s`
 	KeyspaceQuery     = `CREATE KEYSPACE IF NOT EXISTS %s WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };`
 	CassandraTable    = `CREATE TABLE IF NOT EXISTS %s.%s (%s)`
 	CassandraPrimary  = ` PRIMARY KEY (%s)`
-	CassandraCopyData = `COPY %s.%s (%s) VALUES (%s) FROM STDIN`
+	CassandraCopyData = `INSERT INTO %s.%s (%s) VALUES (%s) IF NOT EXISTS`
 )
+
+// CompareType function that check postgresql data type that would be converted
+// to type double, type without precision to migrate in Cassandra DB
+func CompareType(coltype string) bool {
+	ok := false
+	switch coltype {
+	case `double precision`:
+		ok = true
+	case `numeric`:
+		ok = true
+	case `real`:
+		ok = true
+	case `decimal`:
+		ok = true
+	}
+
+	return ok
+}
