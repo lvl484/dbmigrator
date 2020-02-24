@@ -1,4 +1,4 @@
-module dbmigrator/m/v2
+module github.com/lvl484/dbmigrator
 
 go 1.13
 

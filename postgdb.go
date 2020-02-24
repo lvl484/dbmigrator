@@ -69,7 +69,6 @@ func (sp *SQLPostgres) AddColumnToTable(tname string, col Column) {
 	tab := sp.DbData.Tables[tname]
 	tab.AddColumn(col)
 	sp.DbData.Tables[tname] = tab
-	//	fmt.Printf("%s  %s   %s\n", tname, col.Cname, col.Ctype)
 }
 
 // ReadDBName read DB name

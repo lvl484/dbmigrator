@@ -203,6 +203,7 @@ func DoMigrateFromCassandra(cassName string) error {
 
 }
 
+// ManageDataNoSQLtoSQL start transfer data from NoSQL to SQL database
 func (mn *Manager) ManageDataNoSQLtoSQL(postgr *SQLPostgres) error {
 	err := mn.GetDataFromNoSQL()
 	if err != nil {
@@ -268,6 +269,7 @@ func (mn *Manager) ReaDataFromSingleNoSQLTable(tabname string, insertquery strin
 	return err
 }
 
+// ReturnSliceData return result from query ordering as sequence of fields in select query
 func (mn *Manager) ReturnSliceData(tabcolums []Column, inMap map[string]interface{}) []interface{} {
 	reschanel := make(chan []interface{}, 1)
 	mn.wg.Add(1)

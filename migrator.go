@@ -31,5 +31,5 @@ func main() {
 			return
 		}
 	}
-	fmt.Println("Thank you! Data were migrated from PostgreSQL to Cassandra!")
+	fmt.Println("Thank you! Data were migrated PostgreSQL between Cassandra!")
 }
