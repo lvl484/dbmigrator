@@ -6,9 +6,11 @@ import (
 	"log"
 	"os"
 
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
+// SQLPostgres structure that manage connection to PosgreSQL
 type SQLPostgres struct {
 	pdb    *sql.DB
 	DbData *DatabasePostg
@@ -17,8 +19,7 @@ type SQLPostgres struct {
 // newSQLPostgres create a new instance of SQLPostgres which provide connection with Postgresql DB
 func newSQLPostgres() (*SQLPostgres, error) {
 
-	cstr := fmt.Sprintf(PostgresConfDB, "localhost", os.Getenv("MIGRATION_PORT"), "postgres", "root", "dvdrental sslmode=disable")
-	//	cstr := fmt.Sprintf(PostgresConfDB, os.Getenv("MIGRATION_HOST"), os.Getenv("MIGRATION_PORT"), os.Getenv("MIGRATION_USER"), os.Getenv("MIGRATION_PASSWORD"), os.Getenv("MIGRATION_DBNAME"))
+	cstr := fmt.Sprintf(PostgresConfDB, os.Getenv("MIGRATION_HOST"), os.Getenv("MIGRATION_PORT"), os.Getenv("MIGRATION_USER"), os.Getenv("MIGRATION_PASSWORD"), os.Getenv("MIGRATION_DBNAME"))
 	dbd := "postgres"
 	database, err := sql.Open(dbd, cstr)
 
@@ -69,7 +70,7 @@ func (sp *SQLPostgres) AddColumnToTable(tname string, col Column) {
 	tab := sp.DbData.Tables[tname]
 	tab.AddColumn(col)
 	sp.DbData.Tables[tname] = tab
-	fmt.Printf("%s  %s   %s\n", tname, col.Cname, col.Ctype)
+	//	fmt.Printf("%s  %s   %s\n", tname, col.Cname, col.Ctype)
 }
 
 // ReadDBName read DB name
@@ -167,4 +168,54 @@ func (sp *SQLPostgres) ReadDataFromTable(querystring string) (*sql.Rows, error) 
 		return nil, err
 	}
 	return rows, err
+}
+
+// CreateNewDatabase creates new database for writing data in
+func (sp *SQLPostgres) CreateNewDatabase(dbname string) error {
+	var err error
+	cstr := "user=postgres host=localhost password=root sslmode=disable"
+	database, _ := sql.Open("postgres", cstr)
+	dbname += "v1"
+
+	creatstr := fmt.Sprintf(`create database %s`, dbname)
+	_, err = database.Exec(creatstr)
+
+	if err.(*pq.Error).Code == "42P04" {
+		strquery := "DROP SCHEMA public CASCADE"
+		_, err = database.Exec(strquery)
+		if err != nil {
+			return err
+		}
+		strquery = "CREATE SCHEMA public"
+		_, err = database.Exec(strquery)
+		if err != nil {
+			return err
+		}
+		strquery = "GRANT ALL ON SCHEMA public TO postgres"
+		_, err = database.Exec(strquery)
+		if err != nil {
+			return err
+		}
+		strquery = "GRANT ALL ON SCHEMA public TO public"
+		_, err = database.Exec(strquery)
+		if err != nil {
+			return err
+		}
+
+		err = nil
+	}
+	sp.pdb = database
+	return err
+}
+
+// WriteSchemaToDatabase creates tabels in SQL entry according schema from NoSQL
+func (sp *SQLPostgres) WriteSchemaToDatabase(tabs map[string]TableQuery) error {
+	db, err := sp.DatabaseSQL()
+	for _, tab := range tabs {
+		_, err = db.Exec(tab.QueryCreate)
+		if err != nil {
+			return err
+		}
+	}
+	return err
 }

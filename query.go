@@ -27,6 +27,12 @@ var ConvTypePostgCasan = func() map[string]string {
 	}
 }
 
+var ConvTypeCasanPost = func() map[string]string {
+	return map[string]string{
+		`ascii`: `text`, `bigint`: `bigint`, `blob`: `bytea`, `boolean`: `boolean`, `counter`: `int`, `date`: `date`, `decimal`: `real`, `double`: `real`, `duration`: `text`, `float`: `real`, `inet`: `inet`, `int`: `int`, `smallint`: `smallint`, `text`: `text`, `time`: `time`, `timestamp`: `timestamp`, `timeuuid`: `uuid`, `tinyint`: `smallint`, `uuid`: `uuid`, `varchar`: `text`, `varint`: `int`,
+	}
+}
+
 const (
 	PostgresConfDB    = `host=%s port=%s user=%s password=%s dbname=%s`
 	DbNameQuery       = `SELECT * FROM information_schema.information_schema_catalog_name`
@@ -41,11 +47,16 @@ const (
 		JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name 
 		JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name 
 		where tc.table_schema = 'public' and constraint_type = 'FOREIGN KEY' and tc.table_catalog = $1;`
-	PostgresSelect    = `SELECT %s FROM %s`
-	KeyspaceQuery     = `CREATE KEYSPACE IF NOT EXISTS %s WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };`
-	CassandraTable    = `CREATE TABLE IF NOT EXISTS %s.%s (%s)`
-	CassandraPrimary  = ` PRIMARY KEY (%s)`
-	CassandraCopyData = `INSERT INTO %s.%s (%s) VALUES (%s) IF NOT EXISTS`
+	PostgresSelect        = `SELECT %s FROM %s`
+	KeyspaceQuery         = `CREATE KEYSPACE IF NOT EXISTS %s WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };`
+	CassandraTable        = `CREATE TABLE IF NOT EXISTS %s.%s (%s)`
+	PostgreSQLTable       = `CREATE TABLE %s (%s)`
+	CassandraPrimary      = ` PRIMARY KEY (%s)`
+	CassandraCopyData     = `INSERT INTO %s.%s (%s) VALUES (%s) IF NOT EXISTS`
+	PostgreSQLInsertData  = `INSERT INTO %s (%s) VALUES (%s)`
+	CassandraTableSchema  = `SELECT table_name FROM system_schema.tables WHERE keyspace_name = '%s';`
+	CassandraColumnSchema = `SELECT column_name, type, kind FROM system_schema.columns 
+		WHERE keyspace_name = '%s' AND table_name = '%s';`
 )
 
 // CompareType function that check postgresql data type that would be converted

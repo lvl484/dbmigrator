@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -12,11 +13,19 @@ type Manager struct {
 }
 
 // NewManager create a new instance of structure Manager
-func NewManager() (*Manager, error) {
-	pgdb, err := newSQLPostgres()
-	if err != nil {
-		return nil, err
+func NewManager(ver int) (*Manager, error) {
+	var pgdb *SQLPostgres
+	var err error
+	switch ver {
+	case 1:
+		pgdb, err = newSQLPostgres()
+		if err != nil {
+			return nil, err
+		}
+	case 2:
+		pgdb = &SQLPostgres{DbData: NewDatabasePostg()}
 	}
+
 	cassand, err := NewCassandra()
 	if err != nil {
 		return nil, err
@@ -66,10 +75,7 @@ func (mn *Manager) PutSchemaToNoSQL() error {
 	if err != nil {
 		return err
 	}
-	err = mn.cass.CreateTableScheme(mn.posg.DbData)
-	if err != nil {
-		return err
-	}
+	mn.cass.CreateNoSQLTableScheme(mn.posg.DbData)
 	defer mn.wg.Done()
 	return err
 }
@@ -121,7 +127,149 @@ func (mn *Manager) ReaDataFromSingleTable(selectquery string, insertquery string
 	return err
 }
 
+// CloseConnection closes all connections to our databases
 func (mn *Manager) CloseConnection() {
 	mn.cass.CassandraSession.Close()
-	mn.posg.pdb.Close()
+	err := mn.posg.pdb.Close()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+}
+
+// DoMigrateFromCassandra mannage proces of migration from Cassandra to PostgreSQL
+func DoMigrateFromPostgres() error {
+	var MigratorManager *Manager
+	MigratorManager, err := NewManager(1)
+	if err != nil {
+		fmt.Printf("There is some problems with inicialization: %v\n", err)
+		return err
+	}
+	defer MigratorManager.CloseConnection()
+
+	err = MigratorManager.GetSchemaFromSQL()
+	if err != nil {
+		fmt.Printf("Can not get shchema from PostgreSQL: %v\n", err)
+		return err
+	}
+
+	err = MigratorManager.PutSchemaToNoSQL()
+	if err != nil {
+		fmt.Printf("Can not put shchema to Cassandra: %v\n", err)
+		return err
+	}
+	err = MigratorManager.GetDataFromSQL()
+	if err != nil {
+		fmt.Printf("There is some problem with getting data from database: %v\n", err)
+		return err
+	}
+	return err
+}
+
+// DoMigrateFromCassandra mannage proces of migration from Cassandra to PostgreSQL
+func DoMigrateFromCassandra(cassName string) error {
+
+	var MigratorManager *Manager
+	MigratorManager, err := NewManager(2)
+	if err != nil {
+		fmt.Printf("There is some problems with inicialization: %v\n", err)
+		return err
+	}
+
+	err = MigratorManager.GetSchemaFromNoSQL(cassName)
+	if err != nil {
+		return err
+	}
+	err = MigratorManager.posg.CreateNewDatabase(MigratorManager.cass.DBKeyspace)
+	if err != nil {
+		return err
+	}
+
+	err = MigratorManager.posg.WriteSchemaToDatabase(MigratorManager.cass.TableQueries)
+	if err != nil {
+		return err
+	}
+
+	err = MigratorManager.ManageDataNoSQLtoSQL(MigratorManager.posg)
+	if err != nil {
+		return err
+	}
+
+	defer MigratorManager.CloseConnection()
+	return err
+
+}
+
+func (mn *Manager) ManageDataNoSQLtoSQL(postgr *SQLPostgres) error {
+	err := mn.GetDataFromNoSQL()
+	if err != nil {
+		return err
+	}
+	return err
+}
+
+// GetSchemaFromNoSQL takes schema of tables from NoSQL entries
+func (mn *Manager) GetSchemaFromNoSQL(keyspace string) error {
+	mn.wg.Add(1)
+
+	mn.SetKeyspace(keyspace)
+	err := mn.cass.ReadTableSchema(keyspace, mn.posg.DbData)
+	if err != nil {
+		return err
+	}
+
+	defer mn.wg.Done()
+	return err
+}
+
+// GetDataFromNoSQL reading data from NoSQL entries according to schema
+func (mn *Manager) GetDataFromNoSQL() error {
+	var err error
+	for tabname, tab := range mn.cass.TableQueries {
+		errchanel := make(chan error, 1)
+		go func() {
+			errchanel <- mn.ReaDataFromSingleNoSQLTable(tabname, tab.QueryInsert, tab.QuerySelect)
+		}()
+		err = <-errchanel
+		if err != nil {
+			return err
+		}
+	}
+	mn.wg.Wait()
+	return err
+}
+
+// ReaDataFromSingleNoSQLTable reads data from NoSQL table and write inti SQL table
+func (mn *Manager) ReaDataFromSingleNoSQLTable(tabname string, insertquery string, selectquery string) error {
+	var err error
+	mn.wg.Add(1)
+	tabcolums := mn.posg.DbData.Tables[tabname].Columns
+	iter := mn.cass.CassandraSession.Query(selectquery).Iter()
+	m := map[string]interface{}{}
+	for iter.MapScan(m) {
+		errchanel := make(chan error, 1)
+		mn.wg.Add(1)
+		go func() {
+			res := mn.ReturnSliceData(tabcolums, m)
+			_, err = mn.posg.pdb.Exec(insertquery, res...)
+			errchanel <- err
+			mn.wg.Done()
+		}()
+		err = <-errchanel
+		if err != nil {
+			return err
+		}
+		m = map[string]interface{}{}
+	}
+	mn.wg.Done()
+	return err
+}
+
+func (mn *Manager) ReturnSliceData(tabcolums []Column, inMap map[string]interface{}) []interface{} {
+	values := []interface{}{}
+	for i := 0; i < len(inMap); i++ {
+		colname := tabcolums[i].Cname
+		values = append(values, inMap[colname])
+	}
+	return values
 }

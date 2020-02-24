@@ -1,38 +1,35 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"strings"
 )
 
 func main() {
-	var MigratorManager *Manager
-	MigratorManager, err := NewManager()
-	if err != nil {
-		fmt.Printf("There is some problems with inicialization: %v\n", err)
-		return
-	}
-	defer MigratorManager.CloseConnection()
+	// Running program without flags will migrate data from PostgreSQL to Cassandra
+	// using a flag -cass will migrate data from Cassandra to PostgreSQL
+	boolFromCassandra := flag.Bool("cass", false, "migrate from cassandra to postgresql")
+	databaseCassandra := flag.String("db", "", "cassandra db to migrate")
+	flag.Parse()
 
-	err = MigratorManager.GetSchemaFromSQL()
-	if err != nil {
-		fmt.Printf("Can not get shchema from PostgreSQL: %v\n", err)
-		return
-	}
+	if *boolFromCassandra {
+		if strings.EqualFold(*databaseCassandra, "") {
+			fmt.Printf("Please enter a name of database in command line to migrate from : example \" dbmigrator -cass -db mydatabasename\"")
+			return
+		}
+		err := DoMigrateFromCassandra(*databaseCassandra)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 
-	err = MigratorManager.PutSchemaToNoSQL()
-	if err != nil {
-		fmt.Printf("Can not put shchema to Cassandra: %v\n", err)
-		return
-	}
-	err = MigratorManager.GetDataFromSQL()
-	if err != nil {
-		fmt.Printf("There is some problem with getting data from database: %v\n", err)
-		return
-	}
-	err = MigratorManager.CloseConnection()
-	if err != nil {
-		fmt.Printf("Couldn't close connection to PostgreSQL database: %v\n", err)
-		return
+	} else {
+		err := DoMigrateFromPostgres()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 	}
 	fmt.Println("Thank you! Data were migrated from PostgreSQL to Cassandra!")
 }
