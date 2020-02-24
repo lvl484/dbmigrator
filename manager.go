@@ -75,7 +75,10 @@ func (mn *Manager) PutSchemaToNoSQL() error {
 	if err != nil {
 		return err
 	}
-	mn.cass.CreateNoSQLTableScheme(mn.posg.DbData)
+	err = mn.cass.CreateSQLTableScheme(mn.posg.DbData)
+	if err != nil {
+		return err
+	}
 	defer mn.wg.Done()
 	return err
 }
@@ -266,10 +269,17 @@ func (mn *Manager) ReaDataFromSingleNoSQLTable(tabname string, insertquery strin
 }
 
 func (mn *Manager) ReturnSliceData(tabcolums []Column, inMap map[string]interface{}) []interface{} {
+	reschanel := make(chan []interface{}, 1)
+	mn.wg.Add(1)
 	values := []interface{}{}
-	for i := 0; i < len(inMap); i++ {
-		colname := tabcolums[i].Cname
-		values = append(values, inMap[colname])
-	}
-	return values
+	go func() {
+		for i := 0; i < len(inMap); i++ {
+			colname := tabcolums[i].Cname
+			values = append(values, inMap[colname])
+
+		}
+		reschanel <- values
+	}()
+	mn.wg.Done()
+	return <-reschanel
 }

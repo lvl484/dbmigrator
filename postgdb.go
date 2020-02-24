@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -173,37 +172,46 @@ func (sp *SQLPostgres) ReadDataFromTable(querystring string) (*sql.Rows, error) 
 // CreateNewDatabase creates new database for writing data in
 func (sp *SQLPostgres) CreateNewDatabase(dbname string) error {
 	var err error
+	var database *sql.DB
 	cstr := "user=postgres host=localhost password=root sslmode=disable"
-	database, _ := sql.Open("postgres", cstr)
+	database, _ = sql.Open("postgres", cstr)
 	dbname += "v1"
 
 	creatstr := fmt.Sprintf(`create database %s`, dbname)
 	_, err = database.Exec(creatstr)
-
-	if err.(*pq.Error).Code == "42P04" {
-		strquery := "DROP SCHEMA public CASCADE"
-		_, err = database.Exec(strquery)
+	if err == nil {
+		err = database.Close()
 		if err != nil {
 			return err
 		}
-		strquery = "CREATE SCHEMA public"
-		_, err = database.Exec(strquery)
+		cstr = fmt.Sprintf("%s dbname=%s", cstr, dbname)
+		database, err = sql.Open("postgres", cstr)
 		if err != nil {
 			return err
 		}
-		strquery = "GRANT ALL ON SCHEMA public TO postgres"
-		_, err = database.Exec(strquery)
-		if err != nil {
-			return err
-		}
-		strquery = "GRANT ALL ON SCHEMA public TO public"
-		_, err = database.Exec(strquery)
-		if err != nil {
-			return err
-		}
-
-		err = nil
 	}
+	strquery := "DROP SCHEMA public CASCADE"
+	_, err = database.Exec(strquery)
+	if err != nil {
+		return err
+	}
+	strquery = "CREATE SCHEMA public"
+	_, err = database.Exec(strquery)
+	if err != nil {
+		return err
+	}
+	strquery = "GRANT ALL ON SCHEMA public TO postgres"
+	_, err = database.Exec(strquery)
+	if err != nil {
+		return err
+	}
+	strquery = "GRANT ALL ON SCHEMA public TO public"
+	_, err = database.Exec(strquery)
+	if err != nil {
+		return err
+	}
+	err = nil
+
 	sp.pdb = database
 	return err
 }
