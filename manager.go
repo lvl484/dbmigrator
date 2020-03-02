@@ -5,6 +5,20 @@ import (
 	"sync"
 )
 
+type DBManager interface {
+	SetKeyspace(keyspasename string)
+	GetSchemaFromSQL() error
+	PutSchemaToNoSQL() error
+	GetDataFromSQL() error
+	ReaDataFromSingleTable(selectquery string, insertquery string) error
+	CloseConnection()
+	ManageDataNoSQLtoSQL(postgr *SQLPostgres)
+	GetSchemaFromNoSQL(keyspace string) error
+	GetDataFromNoSQL() error
+	ReaDataFromSingleNoSQLTable(tabname string, insertquery string, selectquery string) error
+	ReturnSliceData(tabcolums []Column, inMap map[string]interface{}) []interface{}
+}
+
 // Manager manage a proces of migration SQL entities to NOSQL databases and vice versa
 type Manager struct {
 	posg *SQLPostgres
